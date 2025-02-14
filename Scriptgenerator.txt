@@ -1,0 +1,280 @@
+import os.path
+import streamlit as st
+import pandas as pd
+import os
+
+from PIL import Image
+#from dotenv import load_dotenv
+from langchain.llms import AzureOpenAI
+
+# from openai import AzureOpenAI
+# import openai
+
+# from openai import AzureOpenAI
+from Code.SeleniumJava import java_generator
+from Code.SeleniumPython import \
+    python_generator
+from Code.ManualTCProcessing import \
+    create_timestamp_filename, categorize_line, merge_to_camel_case, parse_json
+from Code.WebPageCrawlerCraft import \
+    WebPageCrawlerCraft
+from Code import GenerateFormattedTC
+from Code.KarateFrameworkPython import karateFramework_generator
+from Code.RobotFrameworkPython import robotFramework_generator
+from Code.SeleniumJavaTestNG import seleniumJavaTestNG_generator
+from Code.PlaywrightJavascript import playwright_javascript_generator
+
+#load_dotenv()
+azure_endpoint ='https://bcbsgenai.openai.azure.com/'
+api_key= 'xx'
+api_version= '2024-02-15-preview'
+
+
+
+def add_logo():
+    logo = Image.open("cog_prim_lg_hrz_r_rgb_pos_2023.png")
+    modified_logo = logo.resize((240, 72))
+    return modified_logo
+
+def generate(file_content, input_param):
+    inter_file = create_timestamp_filename(
+        "Code/data/intermediatory_files",
+        ".csv")
+    if not os.path.exists(
+            "Code/data/intermediatory_files"):
+        os.makedirs(
+            "Code/data/intermediatory_files")
+
+    if input_param['crawl']:
+        output = GenerateFormattedTC.generate(input_param, file_content)
+        output = output.strip()
+
+        data = {'PageClass': [], 'Action': [], 'Object': [], 'Test Data': [], 'Condition': [], 'Condition_Value': [],
+                'Input': []}
+        # with open(file_path, 'r') as file:
+        # page_class_info = ''
+        if "PageClass" in str(output.split('\n')[0]):
+            lines = output.split('\n')[1:]
+        else:
+            lines = output.split('\n')
+        for line in lines:
+            try:
+                page_class, action, obj, test_data, condition, condition_value, _, _ = line.split('|')
+            except:
+                try:
+                    page_class, action, obj, test_data, condition, condition_value, _ = line.split('|')
+                except:
+                    page_class, action, obj, test_data, condition, condition_value = line.split('|')
+            # if line.strip().endswith(':'):
+            #     page_class_info = merge_to_camel_case(str(line.strip().split(':')[0]))
+            if action:
+                print(
+                    f"Action: {action}, Object: {obj}, Test Data: {test_data}, Condition:{condition}, Condition Value:{condition_value}")
+
+                if "'" in page_class:
+                    page_class = page_class.replace("'", "")
+                if '"' in page_class:
+                    page_class = page_class.replace('"', '')
+                data['PageClass'].append(page_class.strip())
+
+                if "'" in action:
+                    action = action.replace("'", "")
+                if '"' in action:
+                    action = action.replace('"', '')
+                data['Action'].append(action.strip())
+
+                if "'" in obj:
+                    obj = obj.replace("'", "")
+                if '"' in obj:
+                    obj = obj.replace('"', '')
+                data['Object'].append(obj.strip())
+
+                if "'" in test_data:
+                    test_data = test_data.replace("'", "")
+                if '"' in test_data:
+                    test_data = test_data.replace('"', '')
+                data['Test Data'].append(test_data.strip())
+
+                if "'" in condition:
+                    condition = condition.replace("'", "")
+                if '"' in condition:
+                    condition = condition.replace('"', '')
+                data['Condition'].append(condition.strip())
+
+                if "'" in condition_value:
+                    condition_value = condition_value.replace("'", "")
+                if '"' in condition_value:
+                    condition_value = condition_value.replace('"', '')
+                data['Condition_Value'].append(condition_value.strip())
+                data['Input'].append(line)
+
+        df = pd.DataFrame(data)
+        crawler = WebPageCrawlerCraft('https://www.google.co.in/')
+        try:
+            crawler.start('chrome', headless=False)
+            crawler.crawl(df, inter_file, input_param)
+        except:
+            crawler.start('chrome', headless=False)
+            crawler.crawl(df, inter_file, input_param)
+        print(df)
+    else:
+        parse_json(file_content, inter_file)
+        # pass
+
+    inter_file_path = inter_file
+    # inter_file_path = (
+    #     "../CoreLogicLayer/IntelligentAutomation/FunctionalTestAutomation/KarateFrameworkPython/data/Ecom_intermediate_main.csv"
+    # )
+    df_inter = pd.read_csv(inter_file_path)
+    print("df_inter***********************************************************" , df_inter)
+
+    if input_param['language'] == "Selenium-Java" and not input_param['isTestNG']:
+        print("Generating Selenium-Java Automation Script...")
+        java_generator(df_inter, input_param)
+
+    if input_param['language'] == "Selenium-Java" and input_param['isTestNG']:
+        print("Generating Selenium-Java TestNG Automation Script...")
+        seleniumJavaTestNG_generator(df_inter, input_param)
+
+    elif input_param['language'] == "Selenium-Python" and not input_param['isCRAFT']:
+        print("Generating Selenium-Python Automation Script...")
+        python_generator(df_inter, input_param)
+
+    elif input_param['language'] == "Selenium-Python" and input_param['isCRAFT']:
+        print("Generating Karate Automation Script...")
+        karateFramework_generator(df_inter, input_param)
+
+    elif input_param['language'] == "Robot-Framework":
+        print("Generating RobotFramework Script...")
+        robotFramework_generator(df_inter, input_param)
+
+    elif input_param['language'] == "Playwright-Javascript":
+        print("Generating Playwright Javascript Automation Script...")
+        playwright_javascript_generator(df_inter, input_param)
+    else:
+        pass
+
+
+def file_selector(folder_path='./Code/Code'):
+    filenames = os.listdir(folder_path)
+    selected_filename = st.selectbox('Select a file', filenames)
+    return os.path.join(folder_path, selected_filename)
+
+def GeneraterawCode(file_details,input_param):
+    print("file_details", file_details)
+    df_inter = pd.read_csv(file_details)
+    print("Generate Raw Code ***********************************************************", df_inter)
+
+    if input_param['language'] == "Selenium-Java" and input_param['isTestNG']:
+        print("Generating Selenium-Java TestNG Automation Script...")
+        seleniumJavaTestNG_generator(df_inter, input_param)
+
+def convertCode(code,option):
+    # This is a placeholder for the actual conversion logic.
+    # You'll need to implement this with a proper Groovy to Java converter.
+    # Send query to Open AI and get response
+
+    api_key = '6aacd95fac664f17b09ad6b30d156090'
+
+    print("API key print : ", api_key)
+    client = AzureOpenAI(azure_endpoint=azure_endpoint, api_key=api_key, api_version=api_version)
+    query = f"""use the below article to answer the question,
+                            Article:{code}
+                            question:{'Covert the code to ' + option}"""
+
+    if code:
+        query = f"""Generate code STRICTLY sticking to the best in class code format. covert the code into logical method, call the methods appropriately, Add any intelligent to code coversion and update the comments for each section.
+                        Code: Generate the code for the selected format
+                        Comments: provide the explanation of the code
+                        Article:{code}
+                        question:{'Covert the code to ' + option}"""
+
+    response = client.chat.completions.create(
+        messages=[{'role': 'system', 'content': 'answer about health'}, {'role': 'user', 'content': query}, ],
+        model='gpt-4o', temperature=0)
+    code_converted = response.choices[0].message.content
+
+    return code_converted
+
+def get_files_from_directory(directory):
+    for foldername, subfolders, filenames in os.walk(directory):
+        for filename in filenames:
+            filepath = os.path.join(foldername, filename)
+            with open(filepath, 'r') as file:
+                data = file.read()
+                convert=convertCode(data,'C# Selenium')
+
+            # Save the data to a .cs file
+            new_filepath = filepath.rsplit('.', 1)[0] + '.cs'
+            with open(new_filepath, 'w') as new_file:
+                new_file.write(convert)
+                print(f'Data saved to: {new_filepath}\n')
+
+
+
+
+if __name__ == '__main__':
+    st.title("Cognizant Generative AI solution - Automated Scripts Generation")
+    image = 'CognizantLogo1.png'
+    st.sidebar.image(add_logo())
+    # st.sidebar.image(image, use_column_width=True)
+    input_param = {
+        "crawl": "true",
+        "isCRAFT": "true",
+        "isContinue": "false",
+        "fileName": " ",
+        "isPageObjectModel": "true",
+        "isPageFactoryModel": "false",
+        "isBDD": "false",
+        "isModular": "true",
+        "isHybrid": "false",
+        "isKeywordDriven": "false",
+        "isDataDriven": "false",
+        "isTestNG": "true",
+        "isJUnit": "false",
+        "isMaven": "true",
+        "isExtentReport": "false",
+        "isCucumberReport": "false",
+        "isAllureReport": "false",
+        "isDefaultReport": "false",
+        "useCaseName": "TestNG Automation Script Generation",
+        "executedBy": " ",
+        "language": "Selenium-Java",
+        "projectID": " ",
+        "locatorPriority": ["xpath"],
+        "model_name": "gpt-4o"
+    }
+    input_stories = st.sidebar.file_uploader("Upload input test case File", type=["txt"])
+    if input_stories:
+        input_data = input_stories.read()
+        # with open(r"C:\GenAI\Mx`TC_to_Automation_TestNG\data\input\TestCase_01.txt") as file1:
+        #     input_data = file1.read()
+
+        if st.sidebar.button("Generate Scripts based on the input test case file"):
+            generate(input_data, input_param)
+            # get_files_from_directory('C:/GenAI/MTC_to_Automation_TestNG/Code/SeleniumJavaTestNG/Output')
+    input_TCFormat = st.sidebar.text_input("Enter the path of the Formatted test case file")
+                      # file_uploader("Upload formatted test case File", type=["csv"]))
+
+    # path = input_TCFormat.getvalue()
+    if input_TCFormat:
+        # input_data = input_TCFormat.read()
+        # with open(r"C:\GenAI\MTC_to_Automation_TestNG\data\input\TestCase_01.txt") as file1:
+        #     input_data = file1.read()
+        # print("path - ", path)
+        if st.sidebar.button("Generate Scripts based on the Formatted test case file"):
+            # input_TCFormat = 'C:\GenAI\MTC_to_Automation_TestNG\Code\data\intermediatory_files\data_2024-09-26_23-53-46.csv'
+            GeneraterawCode(input_TCFormat,input_param)
+
+    uploaded_file = st.file_uploader("Choose a files")
+    if uploaded_file is not None:
+        # translation = st.selectbox('Select the language: ',('','Java','csharp'))
+        # Read the contents of the file
+        file_contents = uploaded_file.read().decode()
+        st.code(file_contents, language='java')
+        # Display the contents of the file
+        # if translation == 'Java':
+        #     st.code(file_contents, language='java')
+        # if translation == 'csharp':
+        #     st.code(file_contents, language='csharp')
+
